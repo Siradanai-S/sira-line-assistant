@@ -32,14 +32,24 @@ async function runReminderCheck() {
   try {
     const pending = await appointmentService.findPendingWithin24h();
     for (const appt of pending) {
+      const nowMs = Date.now();
+      const snoozeUntil = appt.snooze_until ? new Date(appt.snooze_until).getTime() : null;
+
+      // กำลังถูกเลื่อน (snooze) อยู่ → ยังไม่ถึงเวลา ข้ามไปก่อน
+      if (snoozeUntil !== null && nowMs < snoozeUntil) continue;
+
       const lastAt = appt.last_reminder_at ? new Date(appt.last_reminder_at).getTime() : null;
-      const elapsed = lastAt === null ? Infinity : Date.now() - lastAt;
 
       if (lastAt === null) {
         await pushTo(appt, reminderCard(appt, 'first24'));
         await appointmentService.touchReminder(appt.id);
         console.log(`[ReminderEngine] ส่งเตือนรอบแรก: ${appt.title}`);
-      } else if (elapsed >= SIX_HOURS_MS) {
+      } else if (snoozeUntil !== null && nowMs >= snoozeUntil) {
+        // ครบกำหนดที่เลื่อนไว้ → เตือนอีกครั้ง แล้วล้าง snooze กลับเข้าวง 6 ชม.
+        await pushTo(appt, reminderCard(appt, 'snooze'));
+        await appointmentService.clearSnoozeAndTouch(appt.id);
+        console.log(`[ReminderEngine] ส่งเตือนหลังเลื่อน: ${appt.title}`);
+      } else if (nowMs - lastAt >= SIX_HOURS_MS) {
         await pushTo(appt, reminderCard(appt, 'repeat6'));
         await appointmentService.touchReminder(appt.id);
         console.log(`[ReminderEngine] ส่งเตือนซ้ำ (6 ชม.): ${appt.title}`);

@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS pm_appointments (
   date_time         TIMESTAMPTZ NOT NULL,                  -- เวลานัดหมาย (เก็บเป็น UTC, แสดงผลตาม TZ)
   location          TEXT,
   is_acknowledged   BOOLEAN NOT NULL DEFAULT FALSE,        -- กด [รับทราบแล้ว] หรือยัง
+  is_dismissed      BOOLEAN NOT NULL DEFAULT FALSE,        -- กด [ปิดการเตือน] — หยุดเตือนถาวร (นัดยังอยู่)
+  snooze_until      TIMESTAMPTZ,                           -- กด [เลื่อน] — ข้ามการเตือนจนถึงเวลานี้
   reminded_1h_sent  BOOLEAN NOT NULL DEFAULT FALSE,        -- ส่ง Final Alert (1 ชม.ก่อน) แล้วหรือยัง
   last_reminder_at  TIMESTAMPTZ,                           -- เวลาที่ส่งเตือนรอบล่าสุด (ใช้คุม loop 6 ชม.)
   calendar_event_id TEXT,                                  -- id event ใน Google Calendar (ไว้แก้/ลบภายหลัง)

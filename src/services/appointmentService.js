@@ -29,16 +29,50 @@ async function setCalendarEventId(appointmentId, calendarEventId) {
   if (error) throw error;
 }
 
-/** ทำเครื่องหมายว่ารับทราบแล้ว (หยุด loop 6 ชม.) */
+/** ทำเครื่องหมายว่ารับทราบแล้ว (หยุด loop 6 ชม. + ล้าง snooze ถ้ามี) */
 async function acknowledge(appointmentId) {
   const { data, error } = await supabase
     .from('pm_appointments')
-    .update({ is_acknowledged: true })
+    .update({ is_acknowledged: true, snooze_until: null })
     .eq('id', appointmentId)
     .select()
     .single();
   if (error) throw error;
   return data;
+}
+
+/** เลื่อนการเตือนออกไป N ชั่วโมง (ดีฟอลต์ 1) — ระบบจะข้ามการเตือนจนกว่าจะถึง snooze_until */
+async function snooze(appointmentId, hours = 1) {
+  const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('pm_appointments')
+    .update({ snooze_until: until })
+    .eq('id', appointmentId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/** ปิดการเตือนนัดนี้ถาวร (นัดยังอยู่ในระบบ แต่จะไม่ถูกเตือนอีก) */
+async function dismiss(appointmentId) {
+  const { data, error } = await supabase
+    .from('pm_appointments')
+    .update({ is_dismissed: true })
+    .eq('id', appointmentId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/** ล้าง snooze แล้วอัปเดตเวลาเตือนล่าสุด (เรียกหลังส่งเตือนรอบ snooze เพื่อกลับเข้าวง 6 ชม.) */
+async function clearSnoozeAndTouch(appointmentId) {
+  const { error } = await supabase
+    .from('pm_appointments')
+    .update({ snooze_until: null, last_reminder_at: new Date().toISOString() })
+    .eq('id', appointmentId);
+  if (error) throw error;
 }
 
 /** อัปเดตเวลาเตือนล่าสุด (คุมจังหวะ loop 6 ชม.) */
@@ -70,6 +104,7 @@ async function findPendingWithin24h() {
     .from('pm_appointments')
     .select('*')
     .eq('is_acknowledged', false)
+    .eq('is_dismissed', false)
     .gte('date_time', nowIso)
     .lte('date_time', in24hIso);
   if (error) throw error;
@@ -88,6 +123,7 @@ async function findAcknowledgedWithin1h() {
     .select('*')
     .eq('is_acknowledged', true)
     .eq('reminded_1h_sent', false)
+    .eq('is_dismissed', false)
     .gte('date_time', nowIso)
     .lte('date_time', in1hIso);
   if (error) throw error;
@@ -112,6 +148,9 @@ module.exports = {
   createAppointment,
   setCalendarEventId,
   acknowledge,
+  snooze,
+  dismiss,
+  clearSnoozeAndTouch,
   touchReminder,
   markFinalSent,
   findPendingWithin24h,
