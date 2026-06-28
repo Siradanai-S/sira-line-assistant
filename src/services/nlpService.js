@@ -5,60 +5,71 @@ const config = require('../config/env');
 const { now, TZ } = require('../config/datetime');
 
 /**
- * สกัดข้อมูลนัดหมายจากข้อความภาษาไทยทั่วไป (ใช้ Gemini)
- * คืนค่า: { is_appointment, title, date_time (ISO 8601 พร้อม offset), location, confidence }
- * - ใช้ responseMimeType=application/json เพื่อให้ผลลัพธ์เป็น JSON เสมอ
- * - ส่งเวลาปัจจุบัน + timezone เข้าไปด้วย เพื่อให้แปลงคำว่า "พรุ่งนี้/บ่ายสาม/วันศุกร์หน้า" ได้ถูกต้อง
+ * จำแนกเจตนาของข้อความภาษาไทย (ใช้ Gemini) แล้วดึงรายละเอียดออกมา
+ * คืนค่า: { intent, title, date_time, location, due_date, confidence }
+ *  - intent = 'appointment' (มีวัน+เวลานัดชัด) | 'todo' (งานที่ต้องทำ/มีเดดไลน์) | 'other'
+ *  - ส่งเวลาปัจจุบัน + timezone เข้าไปด้วย เพื่อแปลงคำสัมพัทธ์ (พรุ่งนี้/ศุกร์หน้า/สิ้นเดือน) ได้ถูกต้อง
  */
-async function extractAppointment(text) {
+async function classifyMessage(text) {
   const current = now();
   const systemInstruction = [
-    'คุณคือระบบสกัดข้อมูลนัดหมาย (Information Extraction) ที่แม่นยำมาก',
-    'หน้าที่: อ่านข้อความภาษาไทย แล้วระบุว่าเป็น "การนัดหมาย/ประชุม/กำหนดการ" หรือไม่ และดึงรายละเอียดออกมา',
+    'คุณคือระบบจำแนกเจตนา (Intent Classification) + สกัดข้อมูล (Information Extraction) ที่แม่นยำมาก',
+    'อ่านข้อความภาษาไทยของผู้ใช้ แล้วจัดประเภทเป็นหนึ่งใน:',
+    '  • "appointment" = การนัดหมาย/ประชุม/กำหนดการ ที่มี "เวลานัด" ชัดเจน (เช่น ประชุม 10 โมง, เจอลูกค้าบ่ายสอง)',
+    '  • "todo" = งานที่ต้องทำ/สิ่งที่ต้องส่ง/ภารกิจ ที่อาจมี "กำหนดส่ง (เดดไลน์)" แต่ไม่ใช่การนัดเจอตามเวลา (เช่น ส่งรายงานภายในศุกร์นี้, ซื้อของ, โทรหาผู้รับเหมา)',
+    '  • "other" = ข้อความทั่วไปที่ไม่ใช่ทั้งสองอย่าง',
     '',
     `เวลาปัจจุบันคือ ${current.toISO()} (timezone ${TZ})`,
-    'ให้แปลงคำบอกเวลาแบบสัมพัทธ์ (เช่น พรุ่งนี้, มะรืน, บ่ายสองโมง, วันศุกร์หน้า, สิ้นเดือน) เป็นวันเวลาที่ชัดเจน',
-    'ถ้าผู้ใช้ไม่ได้ระบุเวลาที่ชัดเจน แต่ระบุเฉพาะวัน ให้สมมติเวลา 09:00 น.',
+    'ให้แปลงคำบอกเวลาแบบสัมพัทธ์ (พรุ่งนี้, มะรืน, บ่ายสองโมง, วันศุกร์หน้า, สิ้นเดือน) เป็นวันเวลาที่ชัดเจน',
+    'สำหรับ appointment: ถ้าระบุเฉพาะวันแต่ไม่ระบุเวลา ให้สมมติเวลา 09:00 น.',
+    'สำหรับ todo: ถ้าไม่มีกำหนดส่ง ให้ due_date เป็น "" ได้',
     '',
     'ตอบกลับเป็น JSON object เท่านั้น ตามสคีมานี้:',
     '{',
-    '  "is_appointment": boolean,            // true ถ้าข้อความสื่อถึงการนัด/ประชุม/กำหนดการที่มีเวลา',
-    '  "title": string,                      // หัวข้อสั้น กระชับ เช่น "ประชุมไซต์ก่อสร้าง"',
-    '  "date_time": string,                  // ISO 8601 พร้อม offset เช่น "2026-06-28T15:00:00+07:00" (ถ้าไม่มีให้ใส่ "")',
-    '  "location": string,                   // สถานที่ ถ้ามี (ถ้าไม่มีให้ใส่ "")',
-    '  "confidence": number                  // 0.0 - 1.0 ความมั่นใจ',
+    '  "intent": "appointment" | "todo" | "other",',
+    '  "title": string,                 // เรื่อง/หัวข้อสั้น กระชับ',
+    '  "date_time": string,             // (เฉพาะ appointment) ISO 8601 พร้อม offset เช่น "2026-06-28T15:00:00+07:00" ไม่มีให้ใส่ ""',
+    '  "location": string,              // สถานที่ ถ้ามี ไม่มีให้ใส่ ""',
+    '  "due_date": string,              // (เฉพาะ todo) กำหนดส่งรูปแบบ "YYYY-MM-DD" ไม่มีให้ใส่ ""',
+    '  "confidence": number             // 0.0 - 1.0',
     '}'
   ].join('\n');
 
-  const response = await genAI.models.generateContent({
-    model: config.gemini.model,
-    contents: text,
-    config: {
-      systemInstruction,
-      temperature: 0,
-      responseMimeType: 'application/json'
-    }
-  });
-
-  const raw = (response.text || '').trim();
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    const response = await genAI.models.generateContent({
+      model: config.gemini.model,
+      contents: text,
+      config: {
+        systemInstruction,
+        temperature: 0,
+        responseMimeType: 'application/json'
+      }
+    });
+    parsed = JSON.parse((response.text || '').trim());
   } catch (err) {
-    parsed = { is_appointment: false };
+    console.warn('[NLP] จำแนก/parse ไม่สำเร็จ:', err.message);
+    parsed = { intent: 'other' };
   }
 
-  const dateTime = parsed.date_time && String(parsed.date_time).trim() !== '' ? parsed.date_time : null;
+  const dateTime = parsed.date_time && String(parsed.date_time).trim() !== '' ? String(parsed.date_time).trim() : null;
+  const dueDate = parsed.due_date && String(parsed.due_date).trim() !== '' ? String(parsed.due_date).trim() : null;
+  const location = parsed.location && String(parsed.location).trim() !== '' ? String(parsed.location).trim() : null;
+
+  let intent = ['appointment', 'todo', 'other'].includes(parsed.intent) ? parsed.intent : 'other';
+  // appointment ต้องมีเวลานัดจริง มิฉะนั้นตกเป็น other
+  if (intent === 'appointment' && !dateTime) intent = 'other';
 
   return {
-    is_appointment: Boolean(parsed.is_appointment) && Boolean(dateTime),
-    title: parsed.title || 'นัดหมาย',
+    intent,
+    title: parsed.title || (intent === 'todo' ? 'งานที่ต้องทำ' : 'นัดหมาย'),
     date_time: dateTime,
-    location: parsed.location && String(parsed.location).trim() !== '' ? parsed.location : null,
+    location,
+    due_date: dueDate,
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0
   };
 }
 
 module.exports = {
-  extractAppointment
+  classifyMessage
 };

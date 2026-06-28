@@ -3,8 +3,8 @@
 const supabase = require('../config/supabase');
 const { DateTime, TZ } = require('../config/datetime');
 
-/** บันทึกนัดหมายใหม่ */
-async function createAppointment({ userId, title, dateTime, location, calendarEventId }) {
+/** บันทึกนัดหมายใหม่ (pendingConfirm=true = รอผู้ใช้กดยืนยันกรณีนัดซ้ำ) */
+async function createAppointment({ userId, title, dateTime, location, calendarEventId, pendingConfirm }) {
   const { data, error } = await supabase
     .from('pm_appointments')
     .insert({
@@ -12,12 +12,51 @@ async function createAppointment({ userId, title, dateTime, location, calendarEv
       title,
       date_time: dateTime,
       location: location || null,
-      calendar_event_id: calendarEventId || null
+      calendar_event_id: calendarEventId || null,
+      pending_confirm: Boolean(pendingConfirm)
     })
     .select()
     .single();
   if (error) throw error;
   return data;
+}
+
+/**
+ * หานัดที่ชนกัน: เวลานัดตรงเป๊ะ, ยังไม่ปิด, และไม่ใช่แถวที่รอยืนยันอยู่
+ * @param {String} dateTime - ISO ของเวลานัดที่จะเช็ค
+ * @returns {Object|null} นัดที่ชน (ถ้ามี)
+ */
+async function findConflict(dateTime) {
+  const { data, error } = await supabase
+    .from('pm_appointments')
+    .select('*')
+    .eq('date_time', dateTime)
+    .eq('is_dismissed', false)
+    .eq('pending_confirm', false)
+    .limit(1);
+  if (error) throw error;
+  return data && data.length > 0 ? data[0] : null;
+}
+
+/** ยืนยันนัดที่รอยืนยัน (ปลดธง pending_confirm) */
+async function confirmPending(appointmentId) {
+  const { data, error } = await supabase
+    .from('pm_appointments')
+    .update({ pending_confirm: false })
+    .eq('id', appointmentId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/** ลบนัด (ใช้ตอนผู้ใช้กดยกเลิกนัดซ้ำ) */
+async function deleteAppointment(appointmentId) {
+  const { error } = await supabase
+    .from('pm_appointments')
+    .delete()
+    .eq('id', appointmentId);
+  if (error) throw error;
 }
 
 /** อัปเดต event id ของ Google Calendar ภายหลัง (เผื่อบันทึก calendar ช้ากว่า DB) */
@@ -105,6 +144,7 @@ async function findPendingWithin24h() {
     .select('*')
     .eq('is_acknowledged', false)
     .eq('is_dismissed', false)
+    .eq('pending_confirm', false)
     .gte('date_time', nowIso)
     .lte('date_time', in24hIso);
   if (error) throw error;
@@ -137,6 +177,7 @@ async function findToday() {
   const { data, error } = await supabase
     .from('pm_appointments')
     .select('*')
+    .eq('pending_confirm', false)
     .gte('date_time', start)
     .lte('date_time', end)
     .order('date_time', { ascending: true });
@@ -146,6 +187,9 @@ async function findToday() {
 
 module.exports = {
   createAppointment,
+  findConflict,
+  confirmPending,
+  deleteAppointment,
   setCalendarEventId,
   acknowledge,
   snooze,

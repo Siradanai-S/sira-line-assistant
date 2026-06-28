@@ -16,7 +16,7 @@ async function runDailyReport() {
     const [weather, appointments, tasks] = await Promise.all([
       safe(() => weatherService.getWeather(), null),
       safe(() => appointmentService.findToday(), []),
-      safe(() => taskService.findPending(), [])
+      safe(() => taskService.findDueAndOverdue(), [])
     ]);
 
     const card = dailyDashboard({
