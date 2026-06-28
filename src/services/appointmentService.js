@@ -185,11 +185,28 @@ async function findToday() {
   return data || [];
 }
 
+/** นัดหมายของวันที่กำหนด (ตาม timezone) สำหรับการถามสรุปแผนงาน */
+async function findByDate(dateIso) {
+  const start = DateTime.fromISO(dateIso, { zone: TZ }).startOf('day').toUTC().toISO();
+  const end = DateTime.fromISO(dateIso, { zone: TZ }).endOf('day').toUTC().toISO();
+  const { data, error } = await supabase
+    .from('pm_appointments')
+    .select('*')
+    .eq('pending_confirm', false)
+    .eq('is_dismissed', false)
+    .gte('date_time', start)
+    .lte('date_time', end)
+    .order('date_time', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
 module.exports = {
   createAppointment,
   findConflict,
   confirmPending,
   deleteAppointment,
+  findByDate,
   setCalendarEventId,
   acknowledge,
   snooze,

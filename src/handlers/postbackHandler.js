@@ -4,13 +4,13 @@ const querystring = require('querystring');
 const appointmentService = require('../services/appointmentService');
 const taskService = require('../services/taskService');
 const lineMessaging = require('../services/lineMessaging');
-const { finalizeAppointment } = require('./textHandler');
+const appointmentCard = require('../flex/appointmentCard');
 const { formatThaiDateTime } = require('../config/datetime');
 
 /**
  * จัดการ postback (กดปุ่มบนการ์ด Flex)
  * รองรับ:
- *  - นัดหมาย: acknowledge | snooze | dismiss | confirm_appt | cancel_appt  (appointmentId)
+ *  - นัดหมาย: acknowledge | snooze | dismiss | confirm_appt | cancel_new | cancel_old  (appointmentId)
  *  - To-Do:   task_done  (taskId)
  */
 async function handlePostback(event) {
@@ -18,6 +18,7 @@ async function handlePostback(event) {
   const data = querystring.parse(event.postback?.data || '');
   const action = data.action;
   const apptId = data.appointmentId;
+  const oldId = data.oldId;
   const taskId = data.taskId;
 
   try {
@@ -45,15 +46,26 @@ async function handlePostback(event) {
       );
     }
 
+    // นัดซ้ำ: เก็บทั้งคู่
     if (action === 'confirm_appt' && apptId) {
       const appt = await appointmentService.confirmPending(apptId);
-      // ยืนยันแล้วค่อย sync calendar + ตอบการ์ดสรุป (เหมือน path ปกติ)
-      return lineMessaging.reply(replyToken, await finalizeAppointment(appt));
+      return lineMessaging.reply(replyToken, appointmentCard(appt));
     }
 
-    if (action === 'cancel_appt' && apptId) {
+    // นัดซ้ำ: ยกเลิกนัดใหม่ (เก็บนัดเดิม)
+    if (action === 'cancel_new' && apptId) {
       await appointmentService.deleteAppointment(apptId);
-      return lineMessaging.reply(replyToken, '✖️ ยกเลิกนัดใหม่แล้ว (ไม่บันทึกซ้อนเวลาเดิม)');
+      return lineMessaging.reply(replyToken, '🗑️ ยกเลิกนัดใหม่แล้ว — เก็บนัดเดิมไว้ตามเดิมครับ');
+    }
+
+    // นัดซ้ำ: ยกเลิกนัดเดิม แล้วใช้นัดใหม่แทน
+    if (action === 'cancel_old' && apptId && oldId) {
+      await appointmentService.deleteAppointment(oldId);
+      const appt = await appointmentService.confirmPending(apptId);
+      return lineMessaging.reply(replyToken, [
+        { type: 'text', text: '♻️ ยกเลิกนัดเดิมแล้ว — บันทึกนัดใหม่แทนเรียบร้อย' },
+        appointmentCard(appt)
+      ]);
     }
 
     if (action === 'task_done' && taskId) {

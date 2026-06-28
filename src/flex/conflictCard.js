@@ -34,7 +34,7 @@ function conflictCard(pending, existing) {
           { type: 'separator', margin: 'md' },
           { type: 'text', text: 'นัดใหม่ที่จะบันทึก:', size: 'sm', color: '#8B949E', margin: 'md' },
           block('🆕 นัดใหม่', pending),
-          { type: 'text', text: 'ต้องการบันทึกนัดใหม่ซ้อนเวลาเดิมไหม?', size: 'sm', wrap: true, color: '#24292F', margin: 'md', weight: 'bold' }
+          { type: 'text', text: 'ต้องการให้ทำอย่างไร?', size: 'sm', wrap: true, color: '#24292F', margin: 'md', weight: 'bold' }
         ]
       },
       footer: {
@@ -46,13 +46,13 @@ function conflictCard(pending, existing) {
           {
             type: 'button',
             style: 'primary',
-            color: '#9A6700',
+            color: '#1A7F37',
             height: 'sm',
             action: {
               type: 'postback',
-              label: '✅ บันทึกซ้อน',
+              label: '✅ เก็บทั้งคู่ (บันทึกซ้อน)',
               data: `action=confirm_appt&appointmentId=${pending.id}`,
-              displayText: 'ยืนยันบันทึกนัดซ้อนเวลาเดิม'
+              displayText: 'เก็บทั้งสองนัด (ซ้อนเวลาเดิม)'
             }
           },
           {
@@ -61,9 +61,20 @@ function conflictCard(pending, existing) {
             height: 'sm',
             action: {
               type: 'postback',
-              label: '✖️ ยกเลิก',
-              data: `action=cancel_appt&appointmentId=${pending.id}`,
-              displayText: 'ยกเลิกนัดใหม่'
+              label: '🗑️ ยกเลิกนัดใหม่',
+              data: `action=cancel_new&appointmentId=${pending.id}`,
+              displayText: 'ยกเลิกนัดใหม่ (เก็บนัดเดิม)'
+            }
+          },
+          {
+            type: 'button',
+            style: 'secondary',
+            height: 'sm',
+            action: {
+              type: 'postback',
+              label: '♻️ ยกเลิกนัดเดิม (ใช้นัดใหม่แทน)',
+              data: `action=cancel_old&appointmentId=${pending.id}&oldId=${existing.id}`,
+              displayText: 'ยกเลิกนัดเดิม ใช้นัดใหม่แทน'
             }
           }
         ]

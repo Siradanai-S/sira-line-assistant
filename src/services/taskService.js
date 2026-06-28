@@ -49,13 +49,16 @@ async function findDueAndOverdue() {
   return data || [];
 }
 
-/** บันทึก calendar event id ของงาน (all-day event) */
-async function setCalendarEventId(taskId, calendarEventId) {
-  const { error } = await supabase
+/** To-Do ที่มีกำหนดส่งตรงกับวันที่กำหนด (สำหรับการถามสรุปแผนงาน) */
+async function findByDueDate(dateIso) {
+  const { data, error } = await supabase
     .from('pm_tasks')
-    .update({ calendar_event_id: calendarEventId })
-    .eq('id', taskId);
+    .select('*')
+    .eq('is_dismissed', false)
+    .eq('due_date', dateIso)
+    .order('created_at', { ascending: true });
   if (error) throw error;
+  return data || [];
 }
 
 /** ปิดงาน (ตั้งสถานะ Done) */
@@ -74,6 +77,6 @@ module.exports = {
   createTask,
   findPending,
   findDueAndOverdue,
-  setCalendarEventId,
+  findByDueDate,
   markDone
 };

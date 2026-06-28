@@ -5,9 +5,8 @@ const { formatThaiDate } = require('../config/datetime');
 /**
  * การ์ดยืนยันบันทึก To-Do สำเร็จ
  * @param {Object} task - { task_description, due_date }
- * @param {Boolean} savedToCalendar - ลง Google Calendar (all-day) สำเร็จหรือไม่
  */
-function todoCard(task, savedToCalendar) {
+function todoCard(task) {
   const hasDue = Boolean(task.due_date);
   return {
     type: 'flex',
@@ -36,18 +35,6 @@ function todoCard(task, savedToCalendar) {
           {
             type: 'text',
             margin: 'md',
-            wrap: true,
-            size: 'sm',
-            color: savedToCalendar ? '#1A7F37' : '#9A6700',
-            text: savedToCalendar
-              ? '✅ เพิ่มลง Google Calendar (ทั้งวัน) แล้ว'
-              : (hasDue
-                ? 'ℹ️ ยังไม่ได้เชื่อม Google Calendar (บันทึกในระบบเรียบร้อย)'
-                : 'ℹ️ บันทึกในระบบเรียบร้อย')
-          },
-          {
-            type: 'text',
-            margin: 'sm',
             wrap: true,
             size: 'xs',
             color: '#8B949E',

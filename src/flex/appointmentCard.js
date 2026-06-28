@@ -5,9 +5,8 @@ const { formatThaiDateTime } = require('../config/datetime');
 /**
  * การ์ดสรุปการนัดหมายที่บันทึกสำเร็จ
  * @param {Object} appt - { title, date_time, location }
- * @param {Boolean} savedToCalendar - บันทึกลง Google Calendar สำเร็จหรือไม่
  */
-function appointmentCard(appt, savedToCalendar) {
+function appointmentCard(appt) {
   return {
     type: 'flex',
     altText: `บันทึกนัดหมาย: ${appt.title}`,
@@ -35,16 +34,6 @@ function appointmentCard(appt, savedToCalendar) {
           {
             type: 'text',
             margin: 'md',
-            wrap: true,
-            size: 'sm',
-            color: savedToCalendar ? '#1A7F37' : '#9A6700',
-            text: savedToCalendar
-              ? '✅ เพิ่มลง Google Calendar แล้ว'
-              : 'ℹ️ ยังไม่ได้เชื่อม Google Calendar (บันทึกในระบบเรียบร้อย)'
-          },
-          {
-            type: 'text',
-            margin: 'sm',
             wrap: true,
             size: 'xs',
             color: '#8B949E',
