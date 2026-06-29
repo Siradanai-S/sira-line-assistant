@@ -7,6 +7,7 @@ const lineMessaging = require('../services/lineMessaging');
 const appointmentCard = require('../flex/appointmentCard');
 const conflictCard = require('../flex/conflictCard');
 const todoCard = require('../flex/todoCard');
+const cancelListCard = require('../flex/cancelListCard');
 const { DateTime, TZ, formatThaiDate } = require('../config/datetime');
 
 const HELP_TEXT = [
@@ -24,6 +25,7 @@ const HELP_TEXT = [
   '',
   '• ส่งไฟล์ Word/Excel/PDF → สรุปเนื้อหาให้ภายในแชท',
   '• ส่งข้อความเสียง → บันทึกเป็น To-Do อัตโนมัติ',
+  '• /cancel → แสดงรายการนัด/To-Do เพื่อกดยกเลิก',
   '• /whoami → ดู LINE userId ของคุณ',
   '• /help → แสดงเมนูนี้'
 ].join('\n');
@@ -50,6 +52,10 @@ async function handleText(event) {
         replyToken,
         `LINE userId ของคุณคือ:\n${userId}\n\nนำค่านี้ไปใส่ใน .env ที่ตัวแปร PM_LINE_USER_ID เพื่อรับการแจ้งเตือนอัตโนมัติ`
       );
+    }
+
+    if (command === '/cancel' || command === '/list') {
+      return handleCancelList(replyToken);
     }
 
     return lineMessaging.reply(replyToken, `ไม่รู้จักคำสั่ง "${command}"\nพิมพ์ /help เพื่อดูคำสั่งทั้งหมด`);
@@ -133,6 +139,20 @@ async function handleQuery(event, result) {
   ]);
 
   return lineMessaging.reply(replyToken, buildScheduleSummary(date, appointments, tasks));
+}
+
+/** /cancel — แสดงรายการนัด + To-Do ที่ค้างอยู่ ให้กดยกเลิกรายรายการ */
+async function handleCancelList(replyToken) {
+  const [appointments, tasks] = await Promise.all([
+    appointmentService.findUpcoming(),
+    taskService.findPending()
+  ]);
+
+  if (appointments.length === 0 && tasks.length === 0) {
+    return lineMessaging.reply(replyToken, 'ไม่มีนัดหมายหรือ To-Do ที่ค้างอยู่ให้ยกเลิกครับ 👍');
+  }
+
+  return lineMessaging.reply(replyToken, cancelListCard(appointments, tasks));
 }
 
 /** สร้างข้อความสรุปแผนงานของวันที่กำหนด */

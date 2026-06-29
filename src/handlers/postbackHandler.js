@@ -72,6 +72,18 @@ async function handlePostback(event) {
       const task = await taskService.markDone(taskId);
       return lineMessaging.reply(replyToken, `✅ ทำงานเสร็จแล้ว\n\n"${task.task_description}"\nเยี่ยมมากครับ 🎉`);
     }
+
+    // ยกเลิกนัดหมาย (จากเมนู /cancel)
+    if (action === 'appt_cancel' && apptId) {
+      await appointmentService.deleteAppointment(apptId);
+      return lineMessaging.reply(replyToken, '🗑️ ยกเลิกนัดหมายเรียบร้อยแล้วครับ');
+    }
+
+    // ยกเลิก To-Do (จากเมนู /cancel)
+    if (action === 'todo_cancel' && taskId) {
+      await taskService.deleteTask(taskId);
+      return lineMessaging.reply(replyToken, '🗑️ ยกเลิกงาน (To-Do) เรียบร้อยแล้วครับ');
+    }
   } catch (err) {
     console.error(`[Postback] ${action} ล้มเหลว:`, err.message);
     return lineMessaging.reply(replyToken, '❌ อัปเดตสถานะไม่สำเร็จ ลองใหม่อีกครั้งครับ');

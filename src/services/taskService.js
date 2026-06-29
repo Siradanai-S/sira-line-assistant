@@ -61,6 +61,15 @@ async function findByDueDate(dateIso) {
   return data || [];
 }
 
+/** ลบงานทิ้ง (ใช้ตอนผู้ใช้กดยกเลิก To-Do) */
+async function deleteTask(taskId) {
+  const { error } = await supabase
+    .from('pm_tasks')
+    .delete()
+    .eq('id', taskId);
+  if (error) throw error;
+}
+
 /** ปิดงาน (ตั้งสถานะ Done) */
 async function markDone(taskId) {
   const { data, error } = await supabase
@@ -78,5 +87,6 @@ module.exports = {
   findPending,
   findDueAndOverdue,
   findByDueDate,
+  deleteTask,
   markDone
 };

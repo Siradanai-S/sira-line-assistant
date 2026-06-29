@@ -185,6 +185,21 @@ async function findToday() {
   return data || [];
 }
 
+/** นัดหมายที่ยังมาไม่ถึง (อนาคต) ที่ยังไม่ถูกปิด — สำหรับเมนูยกเลิก */
+async function findUpcoming() {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('pm_appointments')
+    .select('*')
+    .eq('is_dismissed', false)
+    .eq('pending_confirm', false)
+    .gte('date_time', nowIso)
+    .order('date_time', { ascending: true })
+    .limit(20);
+  if (error) throw error;
+  return data || [];
+}
+
 /** นัดหมายของวันที่กำหนด (ตาม timezone) สำหรับการถามสรุปแผนงาน */
 async function findByDate(dateIso) {
   const start = DateTime.fromISO(dateIso, { zone: TZ }).startOf('day').toUTC().toISO();
@@ -206,6 +221,7 @@ module.exports = {
   findConflict,
   confirmPending,
   deleteAppointment,
+  findUpcoming,
   findByDate,
   setCalendarEventId,
   acknowledge,
