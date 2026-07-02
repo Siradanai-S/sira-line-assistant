@@ -24,7 +24,7 @@ const HELP_TEXT = [
   '   → ระบบจะรวมนัดหมาย + To-Do ของวันนั้นให้',
   '',
   '• ส่งไฟล์ Word/Excel/PDF → สรุปเนื้อหาให้ภายในแชท',
-  '• ส่งข้อความเสียง → บันทึกเป็น To-Do อัตโนมัติ',
+  '• ส่งข้อความเสียง → AI วิเคราะห์เป็นนัดหมาย/To-Do แล้วบันทึกให้ทันที',
   '• /cancel → แสดงรายการนัด/To-Do เพื่อกดยกเลิก',
   '• /whoami → ดู LINE userId ของคุณ',
   '• /help → แสดงเมนูนี้'
@@ -63,32 +63,33 @@ async function handleText(event) {
 
   // ---- ข้อความทั่วไป: ให้ AI จำแนกเจตนา ----
   const result = await nlpService.classifyMessage(text);
-
-  if (result.intent === 'appointment') {
-    return handleAppointment(event, result);
-  }
-
-  if (result.intent === 'todo') {
-    return handleTodo(event, result);
-  }
-
-  if (result.intent === 'query') {
-    return handleQuery(event, result);
-  }
-
-  // intent === 'other'
-  return lineMessaging.reply(
-    replyToken,
-    'รับข้อความแล้วครับ 👍\nหากต้องการบันทึกนัดหมาย ลองระบุวันเวลาให้ชัด เช่น "ประชุมพรุ่งนี้ 10 โมงเช้าที่ออฟฟิศ"\nบันทึกงาน เช่น "ส่งรายงานภายในศุกร์นี้"\nหรือถามสรุป เช่น "สรุปแผนงานวันที่ 3 กรกฎาคม"\n(พิมพ์ /help เพื่อดูคำสั่งทั้งหมด)'
-  );
+  const message = await routeIntent(userId, result);
+  return lineMessaging.reply(replyToken, message);
 }
 
-/** จัดการ intent = appointment (มีเช็คนัดซ้ำเวลาเดียวกัน) */
-async function handleAppointment(event, extracted) {
-  const userId = event.source?.userId;
-  const replyToken = event.replyToken;
+/**
+ * จำแนกผลลัพธ์ intent แล้วทำงาน + คืน "ข้อความที่จะส่งกลับ" (ไม่ผูกกับ replyToken)
+ * ใช้ร่วมกันทั้งข้อความพิมพ์ (reply) และข้อความเสียง (push)
+ * @param {String} userId
+ * @param {Object} result - ผลจาก nlpService.classifyMessage
+ * @param {String} source - 'text' | 'voice' (ที่มาของ To-Do)
+ */
+async function routeIntent(userId, result, source = 'text') {
+  if (result.intent === 'appointment') {
+    return processAppointment(userId, result);
+  }
+  if (result.intent === 'todo') {
+    return processTodo(userId, result, source);
+  }
+  if (result.intent === 'query') {
+    return processQuery(result);
+  }
+  // intent === 'other'
+  return 'รับข้อความแล้วครับ 👍\nหากต้องการบันทึกนัดหมาย ลองระบุวันเวลาให้ชัด เช่น "ประชุมพรุ่งนี้ 10 โมงเช้าที่ออฟฟิศ"\nบันทึกงาน เช่น "ส่งรายงานภายในศุกร์นี้"\nหรือถามสรุป เช่น "สรุปแผนงานวันที่ 3 กรกฎาคม"';
+}
 
-  // เช็คนัดซ้ำ วัน+เวลาเดียวกัน
+/** intent = appointment (เช็คนัดซ้ำเวลาเดียวกัน) — คืน message */
+async function processAppointment(userId, extracted) {
   const conflict = await appointmentService.findConflict(extracted.date_time);
 
   if (conflict) {
@@ -100,7 +101,7 @@ async function handleAppointment(event, extracted) {
       location: extracted.location,
       pendingConfirm: true
     });
-    return lineMessaging.reply(replyToken, conflictCard(pending, conflict));
+    return conflictCard(pending, conflict);
   }
 
   const appt = await appointmentService.createAppointment({
@@ -110,27 +111,23 @@ async function handleAppointment(event, extracted) {
     location: extracted.location
   });
 
-  return lineMessaging.reply(replyToken, appointmentCard(appt));
+  return appointmentCard(appt);
 }
 
-/** จัดการ intent = todo (บันทึกงาน + กำหนดส่ง) */
-async function handleTodo(event, extracted) {
-  const userId = event.source?.userId;
-  const replyToken = event.replyToken;
-
+/** intent = todo (บันทึกงาน + กำหนดส่ง) — คืน message */
+async function processTodo(userId, extracted, source = 'text') {
   const task = await taskService.createTask({
     userId,
     description: extracted.title,
-    source: 'text',
+    source,
     dueDate: extracted.due_date
   });
 
-  return lineMessaging.reply(replyToken, todoCard(task));
+  return todoCard(task);
 }
 
-/** จัดการ intent = query (สรุปแผนงานของวันที่ระบุ) */
-async function handleQuery(event, result) {
-  const replyToken = event.replyToken;
+/** intent = query (สรุปแผนงานของวันที่ระบุ) — คืน message */
+async function processQuery(result) {
   const date = result.query_date || DateTime.now().setZone(TZ).toISODate();
 
   const [appointments, tasks] = await Promise.all([
@@ -138,7 +135,7 @@ async function handleQuery(event, result) {
     taskService.findByDueDate(date)
   ]);
 
-  return lineMessaging.reply(replyToken, buildScheduleSummary(date, appointments, tasks));
+  return buildScheduleSummary(date, appointments, tasks);
 }
 
 /** /cancel — แสดงรายการนัด + To-Do ที่ค้างอยู่ ให้กดยกเลิกรายรายการ */
@@ -184,5 +181,6 @@ function buildScheduleSummary(dateIso, appointments, tasks) {
 }
 
 module.exports = {
-  handleText
+  handleText,
+  routeIntent
 };

@@ -1,20 +1,23 @@
 'use strict';
 
 const voiceService = require('../services/voiceService');
+const nlpService = require('../services/nlpService');
 const taskService = require('../services/taskService');
 const lineMessaging = require('../services/lineMessaging');
+const todoCard = require('../flex/todoCard');
+const { routeIntent } = require('./textHandler');
 
 /**
  * จัดการข้อความเสียง (message type = 'audio')
- * ถอดเสียง -> บันทึกเป็น To-Do -> ตอบยืนยัน
+ * ถอดเสียง -> ให้ AI วิเคราะห์ว่าเป็นนัดหมาย/To-Do/ถามสรุป -> ทำงานต่อทันที
+ * (ตอบ reply แจ้งกำลังประมวลผลก่อน แล้ว push ผลลัพธ์ เพราะ Gemini ใช้เวลา)
  */
 async function handleAudio(event) {
   const replyToken = event.replyToken;
   const userId = event.source?.userId;
   const messageId = event.message.id;
 
-  // ตอบรับก่อน เพราะการถอดเสียงด้วย Gemini อาจใช้เวลา
-  await lineMessaging.reply(replyToken, '🎙️ กำลังถอดเสียงและบันทึกงาน...');
+  await lineMessaging.reply(replyToken, '🎙️ กำลังถอดเสียงและวิเคราะห์...');
 
   try {
     const transcript = await voiceService.transcribeAudio(messageId);
@@ -24,19 +27,23 @@ async function handleAudio(event) {
       return;
     }
 
-    const task = await taskService.createTask({
-      userId,
-      description: transcript,
-      source: 'voice'
-    });
+    const result = await nlpService.classifyMessage(transcript);
+    const heard = { type: 'text', text: `🎙️ ถอดเสียงได้ว่า:\n"${transcript}"` };
 
-    await lineMessaging.push(
-      userId,
-      `✅ บันทึกงานจากเสียงแล้ว\n\n📝 "${task.task_description}"\n\nสถานะ: รอดำเนินการ (Pending)`
-    );
+    let action;
+    if (result.intent === 'other') {
+      // ไม่ชัดว่าเป็นนัด/งาน → เก็บเป็น To-Do จากข้อความที่ถอดได้ (กันข้อมูลหาย)
+      const task = await taskService.createTask({ userId, description: transcript, source: 'voice' });
+      action = todoCard(task);
+    } else {
+      // นัดหมาย / To-Do / ถามสรุป → ใช้ตรรกะเดียวกับข้อความพิมพ์ (ระบุ source=voice)
+      action = await routeIntent(userId, result, 'voice');
+    }
+
+    await lineMessaging.push(userId, [heard, action]);
   } catch (err) {
     console.error('[Audio] ถอดเสียงไม่สำเร็จ:', err.message);
-    await lineMessaging.push(userId, `❌ ถอดเสียงไม่สำเร็จ (${err.message})`);
+    await lineMessaging.push(userId, `❌ ประมวลผลเสียงไม่สำเร็จ (${err.message})`);
   }
 }
 
