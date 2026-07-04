@@ -25,7 +25,7 @@ function dailyDashboard({ weather, appointments, tasks, cityName }) {
         kv(`${cityName} • ${weather.description}`),
         kv(`🌡️ อุณหภูมิ ${weather.temp}°C (รู้สึกเหมือน ${weather.feelsLike}°C)`),
         kv(`💧 ความชื้น ${weather.humidity}%`),
-        kv(`😷 PM2.5 ${weather.pm25} µg/m³ — ${weather.pm25Label}`)
+        kv(weather.pm25 == null ? `😷 PM2.5: ${weather.pm25Label}` : `😷 PM2.5 ${weather.pm25} µg/m³ — ${weather.pm25Label}`)
       ]
     });
   } else {

@@ -41,16 +41,35 @@ function weatherCodeToThai(code) {
   return map[code] || 'ไม่ทราบสภาพอากาศ';
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** GET พร้อม retry สำหรับความผิดพลาดชั่วคราว (network/timeout/5xx) */
+async function getWithRetry(url, params, { retries = 2, timeout = 12000 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await axios.get(url, { params, timeout });
+      return res.data;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) await delay(600 * (attempt + 1));
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * ฟังก์ชันแปลงข้อมูลดิบ Open-Meteo เป็นรูปแบบที่ใช้แสดงผล (แยกออกมาเพื่อทดสอบได้)
  * @param {Object} weatherData - response จาก /v1/forecast (current)
- * @param {Object} airData - response จาก /v1/air-quality (current)
+ * @param {Object|null} airData - response จาก /v1/air-quality (current) — อาจไม่มีถ้าดึงค่าฝุ่นไม่ได้
  */
 function mapOpenMeteo(weatherData, airData) {
-  const cur = weatherData.current || {};
-  const air = airData.current || {};
-  const pm25Raw = typeof air.pm2_5 === 'number' ? air.pm2_5 : 0;
-  const pm25Value = Math.round(pm25Raw * 10) / 10;
+  const cur = (weatherData && weatherData.current) || {};
+  const air = (airData && airData.current) || null;
+  const hasPm = air && typeof air.pm2_5 === 'number';
+  const pm25Value = hasPm ? Math.round(air.pm2_5 * 10) / 10 : null;
 
   return {
     description: weatherCodeToThai(cur.weather_code),
@@ -58,39 +77,46 @@ function mapOpenMeteo(weatherData, airData) {
     feelsLike: Math.round(cur.apparent_temperature ?? cur.temperature_2m ?? 0),
     humidity: Math.round(cur.relative_humidity_2m ?? 0),
     pm25: pm25Value,
-    pm25Label: pm25Label(pm25Value)
+    pm25Label: hasPm ? pm25Label(pm25Value) : 'ไม่มีข้อมูล'
   };
 }
 
 /**
  * ดึงสภาพอากาศปัจจุบัน + ค่าฝุ่น PM2.5 จาก Open-Meteo (ฟรี ไม่ต้องมี API key)
+ * - แต่ละ endpoint มี retry เอง และแยกอิสระ (allSettled)
+ * - ถ้าค่าฝุ่นดึงไม่ได้ ยังคืนอากาศให้ (pm25 = null)
+ * - คืน null เฉพาะเมื่อ "อากาศหลัก" ดึงไม่สำเร็จจริง ๆ หลัง retry
  * @returns {Object|null}
  */
 async function getWeather() {
   const { lat, lon } = config.weather;
 
-  const [weatherRes, airRes] = await Promise.all([
-    axios.get('https://api.open-meteo.com/v1/forecast', {
-      params: {
-        latitude: lat,
-        longitude: lon,
-        current: 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code',
-        timezone: TZ
-      },
-      timeout: 15000
+  const [weatherResult, airResult] = await Promise.allSettled([
+    getWithRetry('https://api.open-meteo.com/v1/forecast', {
+      latitude: lat,
+      longitude: lon,
+      current: 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code',
+      timezone: TZ
     }),
-    axios.get('https://air-quality-api.open-meteo.com/v1/air-quality', {
-      params: {
-        latitude: lat,
-        longitude: lon,
-        current: 'pm2_5',
-        timezone: TZ
-      },
-      timeout: 15000
+    getWithRetry('https://air-quality-api.open-meteo.com/v1/air-quality', {
+      latitude: lat,
+      longitude: lon,
+      current: 'pm2_5',
+      timezone: TZ
     })
   ]);
 
-  return mapOpenMeteo(weatherRes.data, airRes.data);
+  if (weatherResult.status !== 'fulfilled') {
+    console.error('[Weather] ดึงสภาพอากาศหลักไม่สำเร็จ (หลัง retry):', weatherResult.reason?.message);
+    return null;
+  }
+
+  const airData = airResult.status === 'fulfilled' ? airResult.value : null;
+  if (!airData) {
+    console.warn('[Weather] ดึงค่าฝุ่น PM2.5 ไม่สำเร็จ — แสดงเฉพาะสภาพอากาศ:', airResult.reason?.message);
+  }
+
+  return mapOpenMeteo(weatherResult.value, airData);
 }
 
 module.exports = {
