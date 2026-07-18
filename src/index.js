@@ -27,6 +27,37 @@ app.get('/', (req, res) => {
   });
 });
 
+// ---- Debug: ทดสอบการเรียก Open-Meteo จากฝั่ง server (ป้องกันด้วย CRON_SECRET) ----
+app.get('/debug/weather', async (req, res) => {
+  const provided = req.get('X-Cron-Secret') || req.query.key;
+  if (!config.cron.secret || provided !== config.cron.secret) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  const axios = require('axios');
+  const { lat, lon } = config.weather;
+  const tz = config.server.timezone;
+  const targets = [
+    ['forecast', 'https://api.open-meteo.com/v1/forecast', { latitude: lat, longitude: lon, current: 'temperature_2m', timezone: tz }],
+    ['air', 'https://air-quality-api.open-meteo.com/v1/air-quality', { latitude: lat, longitude: lon, current: 'pm2_5', timezone: tz }]
+  ];
+  const out = {};
+  for (const [name, url, params] of targets) {
+    try {
+      const r = await axios.get(url, { params, timeout: 12000 });
+      out[name] = { ok: true, status: r.status };
+    } catch (e) {
+      out[name] = {
+        ok: false,
+        code: e.code || null,
+        message: e.message,
+        httpStatus: e.response ? e.response.status : null,
+        body: e.response && typeof e.response.data === 'string' ? e.response.data.slice(0, 300) : e.response ? e.response.data : null
+      };
+    }
+  }
+  res.json(out);
+});
+
 // ---- Error handler สำหรับ signature ที่ตรวจไม่ผ่าน ----
 app.use((err, req, res, next) => {
   if (err instanceof line.SignatureValidationFailed) {
