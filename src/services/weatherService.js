@@ -41,6 +41,11 @@ function weatherCodeToThai(code) {
   return map[code] || 'ไม่ทราบสภาพอากาศ';
 }
 
+// cache ในหน่วยความจำ: เก็บผลอากาศล่าสุดที่ดึงสำเร็จ (แอปตื่น 24 ชม.จาก ping → อยู่ข้ามวันได้)
+let cachedWeather = null;
+let cachedAt = 0;
+const CACHE_MAX_AGE_MS = 25 * 60 * 60 * 1000; // ยอมใช้ค่าเก่าได้ไม่เกิน ~25 ชม.
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -108,6 +113,11 @@ async function getWeather() {
 
   if (weatherResult.status !== 'fulfilled') {
     console.error('[Weather] ดึงสภาพอากาศหลักไม่สำเร็จ (หลัง retry):', weatherResult.reason?.message);
+    // fallback: ใช้ค่าล่าสุดที่ดึงสำเร็จ ถ้ายังไม่เก่าเกินไป (กันการ์ดขึ้น "ไม่สำเร็จ")
+    if (cachedWeather && Date.now() - cachedAt < CACHE_MAX_AGE_MS) {
+      console.warn('[Weather] ใช้ข้อมูล cache ล่าสุดแทน');
+      return { ...cachedWeather, stale: true };
+    }
     return null;
   }
 
@@ -116,7 +126,10 @@ async function getWeather() {
     console.warn('[Weather] ดึงค่าฝุ่น PM2.5 ไม่สำเร็จ — แสดงเฉพาะสภาพอากาศ:', airResult.reason?.message);
   }
 
-  return mapOpenMeteo(weatherResult.value, airData);
+  const mapped = mapOpenMeteo(weatherResult.value, airData);
+  cachedWeather = mapped;
+  cachedAt = Date.now();
+  return mapped;
 }
 
 module.exports = {

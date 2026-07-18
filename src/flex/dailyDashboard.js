@@ -28,6 +28,9 @@ function dailyDashboard({ weather, appointments, tasks, cityName }) {
         kv(weather.pm25 == null ? `😷 PM2.5: ${weather.pm25Label}` : `😷 PM2.5 ${weather.pm25} µg/m³ — ${weather.pm25Label}`)
       ]
     });
+    if (weather.stale) {
+      bodyContents.push({ type: 'text', text: '(ข้อมูลอากาศล่าสุดที่บันทึกไว้ — ดึงสดไม่สำเร็จชั่วคราว)', size: 'xxs', color: '#8B949E', wrap: true, margin: 'xs' });
+    }
   } else {
     bodyContents.push(kv('ℹ️ ดึงข้อมูลสภาพอากาศไม่สำเร็จในขณะนี้'));
   }
