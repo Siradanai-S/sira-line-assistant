@@ -52,10 +52,11 @@ router.all('/daily', checkSecret, async (req, res) => {
 
 /**
  * GET /cron/ping
- * endpoint เบา ๆ ให้ใช้ ping กันแอปหลับ (ไม่ต้องใช้ secret)
+ * endpoint เบาที่สุด ให้ใช้ ping กันแอปหลับ (ไม่ต้องใช้ secret)
+ * ตอบ plain text "ok" สั้น ๆ เพื่อเลี่ยงปัญหา cron-job.org มองว่า response ใหญ่เกิน
  */
 router.get('/ping', (req, res) => {
-  res.json({ ok: true, pong: new Date().toISOString() });
+  res.type('text/plain').send('ok');
 });
 
 module.exports = router;
